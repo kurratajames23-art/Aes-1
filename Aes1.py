@@ -7,17 +7,18 @@ import io
 
 app = Flask(__name__)
 
+# ================= KEY DERIVATION =================
 def derive_key(text_key):
     digest = hashes.Hash(hashes.SHA256())
     digest.update(text_key.encode())
     return digest.finalize()
 
+# ================= HTML =================
 html = """
 <!DOCTYPE html>
 <html>
 <head>
 <title>AES Document Encrypt / Decrypt</title>
-
 <style>
 body{
     font-family: Arial;
@@ -45,7 +46,8 @@ button{
     border-radius:10px;
     background:#4e73df;
     color:white;
-    margin-top:12px
+    margin-top:12px;
+    cursor:pointer
 }
 </style>
 </head>
@@ -55,7 +57,6 @@ button{
 <h2 align="center">AES Document Encrypt / Decrypt</h2>
 
 <form method="post" enctype="multipart/form-data">
-
 <label>Key</label>
 <input name="key" required placeholder="Masukkan key bebas">
 
@@ -68,15 +69,14 @@ button{
 </select>
 
 <button type="submit">Proses</button>
-
 </form>
-
 </div>
 </body>
 </html>
 """
 
-@app.route("/", methods=["GET","POST"])
+# ================= ROUTE UTAMA =================
+@app.route("/", methods=["GET", "POST"])
 def home():
     if request.method == "POST":
         key = derive_key(request.form["key"])
@@ -84,39 +84,55 @@ def home():
         file = request.files["file"]
 
         data = file.read()
+        filename = file.filename
 
+        # ---------- ENCRYPT ----------
         if mode == "encrypt":
             iv = os.urandom(16)
-            cipher = Cipher(algorithms.AES(key), modes.CFB(iv), backend=default_backend())
+            cipher = Cipher(
+                algorithms.AES(key),
+                modes.CFB(iv),
+                backend=default_backend()
+            )
             encryptor = cipher.encryptor()
-            ct = encryptor.update(data) + encryptor.finalize()
-            output = io.BytesIO(iv + ct)
+            encrypted = encryptor.update(data) + encryptor.finalize()
+
+            output = io.BytesIO(iv + encrypted)
+            output.seek(0)
 
             return send_file(
                 output,
                 as_attachment=True,
-                download_name="encrypted.txt",
-                mimetype="text/plain"
+                download_name=f"encrypted_{filename}",
+                mimetype="application/octet-stream"
             )
 
+        # ---------- DECRYPT ----------
         else:
             iv = data[:16]
-            ct = data[16:]
-            cipher = Cipher(algorithms.AES(key), modes.CFB(iv), backend=default_backend())
+            ciphertext = data[16:]
+
+            cipher = Cipher(
+                algorithms.AES(key),
+                modes.CFB(iv),
+                backend=default_backend()
+            )
             decryptor = cipher.decryptor()
-            decrypted = decryptor.update(ct) + decryptor.finalize()
+            decrypted = decryptor.update(ciphertext) + decryptor.finalize()
+
             output = io.BytesIO(decrypted)
+            output.seek(0)
 
             return send_file(
                 output,
                 as_attachment=True,
-                download_name="decrypted.txt",
-                mimetype="text/plain"
+                download_name=f"decrypted_{filename}",
+                mimetype="application/octet-stream"
             )
 
     return render_template_string(html)
 
+# ================= RUN APP =================
 if __name__ == "__main__":
-    # gunakan PORT dari environment (wajib untuk hosting)
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port, debug=True)
